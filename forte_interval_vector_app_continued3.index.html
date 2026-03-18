@@ -1,0 +1,761 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { RotateCcw, Play, Pause, ChartNoAxesCombined } from 'lucide-react';
+
+const NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const NOTE_NAMES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+const FORTE_DB = [
+  { forte: '1-1', prime: '[0]', iv: '<000000>', z: null, name: 'single pitch class' },
+  { forte: '2-1', prime: '[01]', iv: '<100000>', z: null, name: 'semitone dyad' },
+  { forte: '2-2', prime: '[02]', iv: '<010000>', z: null, name: 'whole-tone dyad' },
+  { forte: '2-3', prime: '[03]', iv: '<001000>', z: null, name: 'minor third dyad' },
+  { forte: '2-4', prime: '[04]', iv: '<000100>', z: null, name: 'major third dyad' },
+  { forte: '2-5', prime: '[05]', iv: '<000010>', z: null, name: 'perfect fourth dyad' },
+  { forte: '2-6', prime: '[06]', iv: '<000001>', z: null, name: 'tritone dyad' },
+  { forte: '3-1', prime: '[012]', iv: '<210000>', z: null, name: 'chromatic trichord' },
+  { forte: '3-2', prime: '[013]', iv: '<111000>', z: null, name: 'phrygian trichord' },
+  { forte: '3-3', prime: '[014]', iv: '<101100>', z: null, name: 'minor-major trichord' },
+  { forte: '3-4', prime: '[015]', iv: '<100110>', z: null, name: 'all-interval fragment' },
+  { forte: '3-5', prime: '[016]', iv: '<100011>', z: null, name: 'tritone trichord' },
+  { forte: '3-6', prime: '[024]', iv: '<020100>', z: null, name: 'whole-tone trichord' },
+  { forte: '3-7', prime: '[025]', iv: '<011010>', z: null, name: 'quartal trichord' },
+  { forte: '3-8', prime: '[026]', iv: '<010101>', z: null, name: 'incomplete dominant-seventh' },
+  { forte: '3-9', prime: '[027]', iv: '<001110>', z: null, name: 'quartal / suspended' },
+  { forte: '3-10', prime: '[036]', iv: '<002001>', z: null, name: 'diminished trichord' },
+  { forte: '3-11', prime: '[037]', iv: '<001110>', z: null, name: 'major/minor triad' },
+  { forte: '3-12', prime: '[048]', iv: '<000300>', z: null, name: 'augmented trichord' },
+  { forte: '4-1', prime: '[0123]', iv: '<321000>', z: null, name: 'chromatic tetrachord' },
+  { forte: '4-9', prime: '[0167]', iv: '<200111>', z: '4-Z29', name: 'all-interval tetrachord cell' },
+  { forte: '4-Z15', prime: '[0146]', iv: '<111111>', z: '4-Z29', name: 'all-interval tetrachord' },
+  { forte: '4-Z29', prime: '[0137]', iv: '<111111>', z: '4-Z15', name: 'all-interval tetrachord' },
+  { forte: '4-27', prime: '[0258]', iv: '<010020>', z: null, name: 'dominant seventh subset' },
+  { forte: '4-28', prime: '[0369]', iv: '<000400>', z: null, name: 'diminished seventh' },
+  { forte: '4-26', prime: '[0358]', iv: '<012111>', z: null, name: 'minor seventh chord type' },
+  { forte: '4-25', prime: '[0257]', iv: '<021030>', z: null, name: 'diatonic / pentatonic core' },
+  { forte: '5-35', prime: '[02479]', iv: '<023040>', z: null, name: 'major pentatonic' },
+  { forte: '5-34', prime: '[01358]', iv: '<122121>', z: null, name: 'minor pentatonic' },
+  { forte: '6-20', prime: '[014589]', iv: '<222222>', z: null, name: 'hexachord balanced' },
+  { forte: '6-Z17', prime: '[012478]', iv: '<232221>', z: '6-Z43', name: 'z-hexachord' },
+  { forte: '6-Z43', prime: '[013469]', iv: '<232221>', z: '6-Z17', name: 'z-hexachord' },
+  { forte: '6-35', prime: '[02468T]', iv: '<060603>', z: null, name: 'whole-tone hexachord' },
+  { forte: '6-Z44', prime: '[012569]', iv: '<223242>', z: '6-Z19', name: 'z-hexachord' },
+  { forte: '6-Z19', prime: '[013478]', iv: '<223242>', z: '6-Z44', name: 'z-hexachord' },
+  { forte: '7-35', prime: '[013568A]', iv: '<254361>', z: null, name: 'diatonic collection' },
+  { forte: '8-28', prime: '[0134568A]', iv: '<446644>', z: null, name: 'octatonic collection' },
+  { forte: '9-12', prime: '[01234679A]', iv: '<666654>', z: null, name: 'nonatonic aggregate subset' },
+  { forte: '10-6', prime: '[012345678A]', iv: '<888876>', z: null, name: 'aggregate minus one' },
+  { forte: '11-1', prime: '[0123456789A]', iv: '<AAAAA5>', z: null, name: 'aggregate minus one' },
+  { forte: '12-1', prime: '[0123456789AB]', iv: '<CCCCCC>', z: null, name: 'aggregate' },
+];
+
+function mod12(n) {
+  return ((n % 12) + 12) % 12;
+}
+
+function uniqueSorted(arr) {
+  return [...new Set(arr.map((n) => mod12(Number(n)).valueOf()))].sort((a, b) => a - b);
+}
+
+function parseInput(text) {
+  if (!text.trim()) return [];
+  const nameMap = {
+    c: 0, 'b#': 0,
+    'c#': 1, db: 1,
+    d: 2,
+    'd#': 3, eb: 3,
+    e: 4, fb: 4,
+    f: 5, 'e#': 5,
+    'f#': 6, gb: 6,
+    g: 7,
+    'g#': 8, ab: 8,
+    a: 9,
+    'a#': 10, bb: 10,
+    b: 11, cb: 11,
+    t: 10,
+    e10: 10,
+    b11: 11,
+  };
+  const tokens = text.replace(/[\[\]\(\)<>]/g, ' ').replace(/,/g, ' ').split(/\s+/).filter(Boolean);
+  const pcs = [];
+  for (const raw of tokens) {
+    const token = raw.toLowerCase();
+    if (/^-?\d+$/.test(token)) pcs.push(mod12(parseInt(token, 10)));
+    else if (token in nameMap) pcs.push(nameMap[token]);
+  }
+  return uniqueSorted(pcs);
+}
+
+function rotate(arr, i) {
+  return arr.slice(i).concat(arr.slice(0, i));
+}
+
+function adjacentIntervals(rot) {
+  const lifted = rot.map((v, idx) => (idx === 0 ? v : v < rot[0] ? v + 12 : v));
+  return lifted.slice(1).map((v, i) => v - lifted[i]);
+}
+
+function getAllRotations(pcset) {
+  if (!pcset.length) return [];
+  return pcset.map((_, i) => {
+    const rot = rotate(pcset, i);
+    const lifted = rot.map((v, idx) => (idx === 0 ? v : v < rot[0] ? v + 12 : v));
+    return {
+      index: i + 1,
+      pcs: rot,
+      normalizedText: '[' + rot.join(' ') + ']',
+      span: lifted[lifted.length - 1] - lifted[0],
+      intervals: adjacentIntervals(rot),
+    };
+  });
+}
+
+function comparePacked(a, b) {
+  const ai = adjacentIntervals(a);
+  const bi = adjacentIntervals(b);
+  for (let i = ai.length - 1; i >= 0; i -= 1) {
+    if (ai[i] !== bi[i]) return ai[i] - bi[i];
+  }
+  return 0;
+}
+
+function getNormalOrder(pcset) {
+  if (!pcset.length) return [];
+  const rots = getAllRotations(pcset);
+  const minSpan = Math.min(...rots.map((r) => r.span));
+  return rots.filter((r) => r.span === minSpan).map((r) => r.pcs).sort(comparePacked)[0];
+}
+
+function invertSet(pcset) {
+  return uniqueSorted(pcset.map((n) => mod12(-n)));
+}
+
+function transposeToZero(pcset) {
+  if (!pcset.length) return [];
+  const first = pcset[0];
+  return pcset.map((n) => mod12(n - first));
+}
+
+function lexicographicCompare(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const av = a[i] ?? -1;
+    const bv = b[i] ?? -1;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+function getPrimeForm(pcset) {
+  if (!pcset.length) return [];
+  const normal = getNormalOrder(pcset);
+  const invNormal = getNormalOrder(invertSet(pcset));
+  const a = transposeToZero(normal);
+  const b = transposeToZero(invNormal);
+  return lexicographicCompare(a, b) <= 0 ? a : b;
+}
+
+function intervalClass(a, b) {
+  const d = mod12(b - a);
+  return Math.min(d, 12 - d);
+}
+
+function getIntervalVector(pcset) {
+  const iv = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < pcset.length; i += 1) {
+    for (let j = i + 1; j < pcset.length; j += 1) {
+      const ic = intervalClass(pcset[i], pcset[j]);
+      if (ic >= 1 && ic <= 6) iv[ic - 1] += 1;
+    }
+  }
+  return iv;
+}
+
+function ivToText(iv) {
+  return `<${iv.join('')}>`;
+}
+
+function arrayToText(arr) {
+  return '[' + arr.join(' ') + ']';
+}
+
+function toPrimeString(arr) {
+  const map = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'E'];
+  return '[' + arr.map((n) => map[n] ?? String(n)).join('') + ']';
+}
+
+function forteMatchesByPrime(prime) {
+  const text = toPrimeString(prime);
+  return FORTE_DB.filter((row) => row.prime === text);
+}
+
+function forteMatchesByIV(iv) {
+  const text = ivToText(iv);
+  return FORTE_DB.filter((row) => row.iv === text);
+}
+
+function getBrightness(pcset) {
+  if (!pcset.length) return 0;
+  const brightWeights = [0, 0.65, 0.35, -0.4, 0.75, -0.2, -0.9, 0.25, -0.55, 0.55, -0.15, -0.35];
+  return pcset.reduce((sum, pc) => sum + brightWeights[pc], 0) / pcset.length;
+}
+
+function classifyIv(iv, cardinality) {
+  const [ic1, ic2, ic3, ic4, ic5, ic6] = iv;
+  const tension = ic1 * 1.4 + ic6 * 1.1 + ic2 * 0.5;
+  const openness = ic5 * 1.1 + ic4 * 0.8 - ic1 * 0.7;
+  const symmetry = Math.abs(ic1 - ic6) + Math.abs(ic2 - ic5) + Math.abs(ic3 - ic4);
+  const tertian = ic3 + ic4;
+  const quartal = ic5;
+  const chromatic = ic1 + ic2;
+  const wholeTone = ic2 + ic4 + ic6;
+  const perfectBias = ic5 - ic1;
+
+  let character = 'balanced';
+  let auditory = '中庸 / neutral';
+
+  if (chromatic >= Math.max(3, cardinality - 1) && ic1 >= 1) {
+    character = 'chromatic tension';
+    auditory = '不安・密集・擦過的';
+  } else if (ic6 >= 2 && ic1 === 0 && symmetry <= 1) {
+    character = 'symmetric / tritone-rich';
+    auditory = '無機質・浮遊・非機能的';
+  } else if (quartal >= 2 && perfectBias >= 1) {
+    character = 'quartal openness';
+    auditory = '開放的・広い・硬質';
+  } else if (tertian >= 2 && ic1 <= 1) {
+    character = 'tertian / triadic';
+    auditory = '安定・和声的・親和的';
+  } else if (wholeTone >= 4 && ic1 === 0) {
+    character = 'whole-tone blur';
+    auditory = '夢幻・曖昧・方向性希薄';
+  } else if (openness > tension) {
+    character = 'open consonant';
+    auditory = '透明・明るい・空間的';
+  } else if (tension > openness + 1.5) {
+    character = 'dense dissonant';
+    auditory = '鋭い・緊張・神経質';
+  }
+
+  return {
+    character,
+    auditory,
+    metrics: {
+      tension: Number(tension.toFixed(2)),
+      openness: Number(openness.toFixed(2)),
+      symmetry: Number(symmetry.toFixed(2)),
+      tertian,
+      quartal,
+      chromatic,
+      wholeTone,
+    },
+  };
+}
+
+function getIvAxes(iv) {
+  const [ic1, ic2, ic3, ic4, ic5, ic6] = iv;
+  return {
+    x: Number((ic5 + ic4 - ic1).toFixed(2)),
+    y: Number((ic1 + ic6 + ic2 * 0.5).toFixed(2)),
+    z: Number((ic3 + ic4 + ic6 - ic2).toFixed(2)),
+  };
+}
+
+function buildC4Notes(pcset) {
+  return pcset.map((pc) => 60 + pc);
+}
+
+function midiToFreq(m) {
+  return 440 * Math.pow(2, (m - 69) / 12);
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const stopRef = useRef([]);
+
+  const ensure = async () => {
+    if (!ctxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new Ctx();
+    }
+    if (ctxRef.current.state === 'suspended') await ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const stopAll = () => {
+    stopRef.current.forEach((fn) => fn());
+    stopRef.current = [];
+  };
+
+  const playChord = async (midis, duration = 1.25) => {
+    stopAll();
+    const ctx = await ensure();
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.18, now + 0.03);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    master.connect(ctx.destination);
+    midis.forEach((m) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = midiToFreq(m);
+      gain.gain.value = 1 / Math.max(midis.length, 1);
+      osc.connect(gain);
+      gain.connect(master);
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+    });
+    stopRef.current.push(() => {
+      try {
+        master.gain.cancelScheduledValues(ctx.currentTime);
+        master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02);
+      } catch {}
+    });
+  };
+
+  const playArpeggio = async (midis, noteLen = 0.22) => {
+    stopAll();
+    const ctx = await ensure();
+    const stops = [];
+    midis.forEach((m, i) => {
+      const start = ctx.currentTime + i * noteLen;
+      const end = start + noteLen * 0.9;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = midiToFreq(m);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, end);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(end + 0.02);
+      stops.push(() => {
+        try {
+          gain.gain.cancelScheduledValues(ctx.currentTime);
+          gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02);
+        } catch {}
+      });
+    });
+    stopRef.current = stops;
+  };
+
+  return { playChord, playArpeggio, stopAll };
+}
+
+function PcClock({ pcs }) {
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 78;
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[240px] mx-auto">
+      <circle cx={cx} cy={cy} r={r + 18} fill="none" stroke="currentColor" opacity="0.15" />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" opacity="0.25" />
+      {Array.from({ length: 12 }).map((_, i) => {
+        const ang = (-90 + i * 30) * (Math.PI / 180);
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r;
+        const active = pcs.includes(i);
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r={active ? 15 : 12} fill={active ? 'currentColor' : 'transparent'} opacity={active ? 0.95 : 0.18} stroke="currentColor" />
+            <text x={x} y={y + 4} textAnchor="middle" fontSize="11" fill={active ? 'white' : 'currentColor'}>
+              {NOTE_NAMES_SHARP[i]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function StaffView({ pcs }) {
+  const notes = buildC4Notes(pcs);
+  return (
+    <div className="space-y-2">
+      <div className="relative h-36 rounded-xl border bg-white/60 dark:bg-black/20 overflow-hidden">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="absolute left-3 right-3 border-t border-black/25" style={{ top: 24 + i * 18 }} />
+        ))}
+        {notes.map((m, idx) => {
+          const y = 24 + (72 - m) * 4.5;
+          return <div key={`${m}-${idx}`} className="absolute w-4 h-3 rounded-full bg-black" style={{ left: 42 + idx * 22, top: y }} />;
+        })}
+      </div>
+      <div className="text-xs text-muted-foreground">C4基準の概略譜面表示</div>
+    </div>
+  );
+}
+
+function IVBars({ iv, large = false }) {
+  const max = Math.max(1, ...iv);
+  return (
+    <div className={large ? 'space-y-4' : 'space-y-3'}>
+      <div className={large ? 'text-4xl md:text-5xl font-bold tracking-wide' : 'text-2xl font-bold'}>{ivToText(iv)}</div>
+      <div className="grid grid-cols-6 gap-2 items-end h-40">
+        {iv.map((v, i) => (
+          <div key={i} className="flex flex-col items-center gap-2">
+            <div className="text-xs font-medium">{v}</div>
+            <div className="w-full rounded-t-xl bg-primary/80" style={{ height: `${(v / max) * 100}%`, minHeight: 6 }} />
+            <div className="text-xs text-muted-foreground">ic{i + 1}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IV2DMap({ iv }) {
+  const { x, y } = getIvAxes(iv);
+  const px = 110 + x * 12;
+  const py = 110 - y * 10;
+  return (
+    <svg viewBox="0 0 220 220" className="w-full h-[220px] rounded-xl border bg-background">
+      <line x1="110" y1="18" x2="110" y2="202" stroke="currentColor" opacity="0.2" />
+      <line x1="18" y1="110" x2="202" y2="110" stroke="currentColor" opacity="0.2" />
+      <text x="198" y="104" fontSize="10" textAnchor="end">open</text>
+      <text x="22" y="104" fontSize="10">dense</text>
+      <text x="116" y="24" fontSize="10">tense</text>
+      <text x="116" y="198" fontSize="10">stable</text>
+      <circle cx={px} cy={py} r="9" fill="currentColor" />
+    </svg>
+  );
+}
+
+function Pseudo3D({ iv }) {
+  const { x, y, z } = getIvAxes(iv);
+  const px = 110 + x * 10 + z * 6;
+  const py = 110 - y * 9 - z * 4;
+  return (
+    <svg viewBox="0 0 220 220" className="w-full h-[220px] rounded-xl border bg-background">
+      <line x1="40" y1="180" x2="180" y2="180" stroke="currentColor" opacity="0.15" />
+      <line x1="40" y1="180" x2="40" y2="40" stroke="currentColor" opacity="0.15" />
+      <line x1="40" y1="180" x2="168" y2="72" stroke="currentColor" opacity="0.15" />
+      <circle cx={px} cy={py} r="9" fill="currentColor" />
+      <text x="176" y="70" fontSize="10">symmetry</text>
+      <text x="44" y="42" fontSize="10">tension</text>
+      <text x="182" y="194" fontSize="10">openness</text>
+    </svg>
+  );
+}
+
+function OrbitMap({ iv }) {
+  const total = iv.reduce((a, b) => a + b, 0) || 1;
+  const points = iv.map((v, i) => {
+    const ang = (-90 + i * 60) * (Math.PI / 180);
+    const r = 24 + (v / total) * 80;
+    return { x: 110 + Math.cos(ang) * r, y: 110 + Math.sin(ang) * r, label: `ic${i + 1}` };
+  });
+  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+  return (
+    <svg viewBox="0 0 220 220" className="w-full h-[220px] rounded-xl border bg-background">
+      {[30, 55, 80].map((r) => <circle key={r} cx="110" cy="110" r={r} fill="none" stroke="currentColor" opacity="0.12" />)}
+      {points.map((p, i) => (
+        <g key={i}>
+          <line x1="110" y1="110" x2={p.x} y2={p.y} stroke="currentColor" opacity="0.15" />
+          <circle cx={p.x} cy={p.y} r="4" fill="currentColor" />
+          <text x={p.x} y={p.y - 8} fontSize="10" textAnchor="middle">{p.label}</text>
+        </g>
+      ))}
+      <path d={d} fill="currentColor" opacity="0.18" stroke="currentColor" />
+    </svg>
+  );
+}
+
+function RotationTable({ rotations, normalOrder }) {
+  const normalText = arrayToText(normalOrder);
+  return (
+    <div className="space-y-2">
+      {rotations.map((r) => {
+        const hit = r.normalizedText === normalText;
+        return (
+          <div key={r.index} className={`rounded-xl border p-3 ${hit ? 'border-primary bg-primary/5' : ''}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-mono text-sm">{r.normalizedText}</div>
+              <div className="flex items-center gap-2">
+                {hit && <Badge>normal order採用</Badge>}
+                <Badge variant="outline">span {r.span}</Badge>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">adjacent intervals: {r.intervals.join(' – ') || '—'}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ForteTable({ exactRows, ivRows, primeText, ivText }) {
+  return (
+    <Tabs defaultValue="prime" className="w-full">
+      <TabsList className="grid grid-cols-2 w-full">
+        <TabsTrigger value="prime">prime form一致</TabsTrigger>
+        <TabsTrigger value="iv">IV一致</TabsTrigger>
+      </TabsList>
+      <TabsContent value="prime" className="mt-3">
+        <div className="text-xs text-muted-foreground mb-2">prime form {primeText} に一致する set class</div>
+        <ScrollArea className="h-[260px] rounded-xl border">
+          <div className="p-3 space-y-2">
+            {exactRows.length ? exactRows.map((row) => (
+              <div key={row.forte + row.prime} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold">{row.forte}</div>
+                  {row.z && <Badge variant="secondary">Z: {row.z}</Badge>}
+                </div>
+                <div className="text-sm font-mono mt-1">{row.prime} / {row.iv}</div>
+                <div className="text-xs text-muted-foreground mt-1">{row.name}</div>
+              </div>
+            )) : <div className="p-3 text-sm text-muted-foreground">現在の簡易DBでは一致データが未登録です。</div>}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value="iv" className="mt-3">
+        <div className="text-xs text-muted-foreground mb-2">interval vector {ivText} を共有する set class</div>
+        <ScrollArea className="h-[260px] rounded-xl border">
+          <div className="p-3 space-y-2">
+            {ivRows.length ? ivRows.map((row) => (
+              <div key={row.forte + row.prime} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold">{row.forte}</div>
+                  <div className="font-mono text-xs">{row.prime}</div>
+                </div>
+                <div className="text-sm mt-1">{row.name}</div>
+                {row.z && <div className="text-xs text-muted-foreground mt-1">Z-related: {row.z}</div>}
+              </div>
+            )) : <div className="p-3 text-sm text-muted-foreground">現在の簡易DBでは同一IVの行が未登録です。</div>}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+export default function ForteIntervalVectorApp() {
+  const [input, setInput] = useState('0 4 7');
+  const [playMode, setPlayMode] = useState('chord');
+  const [spelling, setSpelling] = useState('sharp');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const { playChord, playArpeggio, stopAll } = useAudio();
+
+  const pcs = useMemo(() => parseInput(input), [input]);
+  const rotations = useMemo(() => getAllRotations(pcs), [pcs]);
+  const normalOrder = useMemo(() => getNormalOrder(pcs), [pcs]);
+  const primeForm = useMemo(() => getPrimeForm(pcs), [pcs]);
+  const iv = useMemo(() => getIntervalVector(pcs), [pcs]);
+  const ivText = useMemo(() => ivToText(iv), [iv]);
+  const primeText = useMemo(() => toPrimeString(primeForm), [primeForm]);
+  const normalText = useMemo(() => arrayToText(normalOrder), [normalOrder]);
+  const brightness = useMemo(() => getBrightness(pcs), [pcs]);
+  const ivCharacter = useMemo(() => classifyIv(iv, pcs.length), [iv, pcs.length]);
+  const exactForte = useMemo(() => forteMatchesByPrime(primeForm), [primeForm]);
+  const ivForte = useMemo(() => forteMatchesByIV(iv), [iv]);
+
+  const noteNames = spelling === 'sharp' ? NOTE_NAMES_SHARP : NOTE_NAMES_FLAT;
+  const pcLabels = pcs.map((pc) => noteNames[pc]).join(' · ');
+
+  const handlePlay = async () => {
+    if (!pcs.length) return;
+    setIsPlaying(true);
+    const midis = buildC4Notes(pcs);
+    try {
+      if (playMode === 'chord') await playChord(midis);
+      else await playArpeggio(midis);
+    } finally {
+      window.setTimeout(() => setIsPlaying(false), playMode === 'chord' ? 1300 : Math.max(900, midis.length * 240));
+    }
+  };
+
+  useEffect(() => () => stopAll(), [stopAll]);
+
+  return (
+    <div className="min-h-screen bg-background text-foreground p-4 md:p-6">
+      <div className="max-w-[1600px] mx-auto space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <Card className="xl:col-span-3">
+            <CardHeader>
+              <CardTitle>Pitch-class 入力</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="例: 0 4 7 / C Eb G / 0 1 4 6" />
+              <div className="flex flex-wrap gap-2">
+                {[['Major triad', '0 4 7'], ['Minor triad', '0 3 7'], ['Quartal', '0 5 10'], ['Whole-tone', '0 2 4 6 8 10'], ['Octatonic', '0 1 3 4 6 7 9 10']].map(([label, value]) => (
+                  <Button key={label} size="sm" variant="outline" onClick={() => setInput(value)}>{label}</Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={spelling} onValueChange={setSpelling}>
+                  <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sharp">Sharp表記</SelectItem>
+                    <SelectItem value="flat">Flat表記</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={playMode} onValueChange={setPlayMode}>
+                  <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chord">和音</SelectItem>
+                    <SelectItem value="arp">アルペジオ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handlePlay} disabled={!pcs.length}><Play className="w-4 h-4 mr-2" />再生</Button>
+                <Button variant="outline" onClick={() => { stopAll(); setIsPlaying(false); }}><Pause className="w-4 h-4 mr-2" />停止</Button>
+                <Button variant="secondary" onClick={() => setInput('0 4 7')}><RotateCcw className="w-4 h-4 mr-2" />Reset</Button>
+              </div>
+              <div className="text-sm">
+                <div className="font-medium">集合:</div>
+                <div className="text-muted-foreground">{pcLabels || '—'}</div>
+                <div className="text-xs text-muted-foreground mt-1">{isPlaying ? '再生中…' : '待機中'}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="xl:col-span-6 border-primary/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ChartNoAxesCombined className="w-5 h-5" />Interval Vector</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <IVBars iv={iv} large />
+              <div className="grid md:grid-cols-3 gap-3 mt-5">
+                {iv.map((v, i) => (
+                  <div key={i} className="rounded-xl border p-3">
+                    <div className="text-xs text-muted-foreground">interval class</div>
+                    <div className="text-lg font-semibold">ic{i + 1}</div>
+                    <div className="text-2xl font-bold mt-1">{v}</div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="xl:col-span-3">
+            <CardHeader>
+              <CardTitle>集合情報</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-xl border p-3">
+                <div className="text-muted-foreground text-xs">normal order</div>
+                <div className="font-mono mt-1">{normalText}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-muted-foreground text-xs">prime form</div>
+                <div className="font-mono mt-1">{primeText}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-muted-foreground text-xs">cardinality</div>
+                <div className="font-semibold mt-1">{pcs.length || 0}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-muted-foreground text-xs">Z-relation</div>
+                <div className="font-semibold mt-1">{exactForte.find((r) => r.z)?.z ?? ivForte.find((r) => r.z)?.z ?? '—'}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-muted-foreground text-xs">明るさ / 暗さ</div>
+                <div className="font-semibold mt-1">{brightness > 0.18 ? '明るい寄り' : brightness < -0.18 ? '暗い寄り' : '中立'} ({brightness.toFixed(2)})</div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <Card className="xl:col-span-3">
+            <CardHeader><CardTitle>Pitch-class clock</CardTitle></CardHeader>
+            <CardContent><PcClock pcs={pcs} /></CardContent>
+          </Card>
+
+          <Card className="xl:col-span-3">
+            <CardHeader><CardTitle>C4基準譜面</CardTitle></CardHeader>
+            <CardContent><StaffView pcs={pcs} /></CardContent>
+          </Card>
+
+          <Card className="xl:col-span-6">
+            <CardHeader><CardTitle>normal orderにする前の回転パターン</CardTitle></CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[280px] pr-3">
+                <RotationTable rotations={rotations} normalOrder={normalOrder} />
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <Card className="xl:col-span-4">
+            <CardHeader><CardTitle>和声キャラクター分析</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="rounded-xl border p-4">
+                <div className="text-xs text-muted-foreground">IVベースの主分類</div>
+                <div className="text-2xl font-bold mt-1">{ivCharacter.character}</div>
+                <div className="text-sm mt-2">聴覚特徴: {ivCharacter.auditory}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {Object.entries(ivCharacter.metrics).map(([k, v]) => (
+                  <div key={k} className="rounded-xl border p-3">
+                    <div className="text-xs text-muted-foreground">{k}</div>
+                    <div className="font-semibold mt-1">{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-xl border p-4 text-sm leading-6 text-muted-foreground">
+                ic1/2 を「密集・摩擦」、ic4/5 を「開放・空間」、ic6 を「対称・無機質」の主軸として、
+                triadic / quartal / chromatic / symmetric の印象を IV から推定します。
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="xl:col-span-8">
+            <CardHeader><CardTitle>IV maps</CardTitle></CardHeader>
+            <CardContent className="grid md:grid-cols-3 gap-4">
+              <div><div className="text-sm font-medium mb-2">IV 2D map</div><IV2DMap iv={iv} /></div>
+              <div><div className="text-sm font-medium mb-2">IV pseudo-3D</div><Pseudo3D iv={iv} /></div>
+              <div><div className="text-sm font-medium mb-2">orbit map</div><OrbitMap iv={iv} /></div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <Card className="xl:col-span-8">
+            <CardHeader><CardTitle>224 Forte set class DB</CardTitle></CardHeader>
+            <CardContent>
+              <ForteTable exactRows={exactForte} ivRows={ivForte} primeText={primeText} ivText={ivText} />
+            </CardContent>
+          </Card>
+
+          <Card className="xl:col-span-4">
+            <CardHeader><CardTitle>IV中心の対応整理</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">現在の prime form</div>
+                <div className="font-mono mt-1">{primeText}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">共有IVを持つ set class 数</div>
+                <div className="text-2xl font-bold mt-1">{ivForte.length}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">一致 set class</div>
+                <div className="mt-1">{exactForte.length ? exactForte.map((r) => r.forte).join(', ') : 'DB簡易版では未登録'}</div>
+              </div>
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">IV共有候補</div>
+                <div className="mt-1">{ivForte.length ? ivForte.map((r) => r.forte).join(', ') : '—'}</div>
+              </div>
+              <div className="rounded-xl border p-3 text-muted-foreground">
+                同じ IV でも prime form は異なることがあります。ここでは「同型一致」と「IV共有」を分けて表示しています。
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
